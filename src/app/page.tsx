@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Flame, Calendar, ClipboardList, Settings, Sparkles, Smartphone, Wifi, Battery } from 'lucide-react';
+import { Wifi, Battery } from 'lucide-react';
 import { CheckInStatus, WeeklySchedule, WorkoutLog, SyncConfig, DayOfWeek, WorkoutTemplate } from '../types/gym';
 import { DEFAULT_WEEKLY_SCHEDULE, MOCK_WORKOUT_LOGS, WORKOUT_TEMPLATES } from '../constants/mockData';
 import { BottomNav } from '../components/BottomNav';
