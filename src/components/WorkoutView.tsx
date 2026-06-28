@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { Timer, Dumbbell, Calendar, FileText, CheckCircle, Clock } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Timer, Dumbbell, Calendar, FileText, CheckCircle, Clock, Trash2, X, GripVertical } from 'lucide-react';
 import { DailyRecord, CheckInStatus } from '../types/fitness';
 import { WORKOUT_TEMPLATES } from '../constants/mockData';
 
@@ -69,6 +69,64 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
 }) => {
   const { workout } = record;
 
+  // Drag and drop states
+  const [dragState, setDragState] = useState<{
+    part: string;
+    index: number;
+    text: string;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    offsetX: number;
+    offsetY: number;
+    tagWidth: number;
+    tagHeight: number;
+  } | null>(null);
+
+  const [isOverTrash, setIsOverTrash] = useState(false);
+  const trashRef = useRef<HTMLDivElement>(null);
+
+  // Handlers for manual exercise input
+  const [newExerciseInputs, setNewExerciseInputs] = useState<Record<string, string>>({});
+
+  const handleNewExerciseChange = (part: string, val: string) => {
+    setNewExerciseInputs((prev) => ({
+      ...prev,
+      [part]: val,
+    }));
+  };
+
+  const handleAddNewExercise = (part: string) => {
+    const val = newExerciseInputs[part]?.trim();
+    if (!val) return;
+
+    const currentCat = workout.categorized || {};
+    const currentVal = currentCat[part] || '';
+    const exercises = parseExercises(currentVal);
+    
+    if (!exercises.includes(val)) {
+      const updatedExercises = [...exercises, val];
+      const newCat = {
+        ...currentCat,
+        [part]: stringifyExercises(updatedExercises)
+      };
+      onUpdateRecord({
+        ...record,
+        workout: {
+          ...workout,
+          categorized: newCat,
+          description: buildDescription(newCat, workout.generalNote || '')
+        }
+      });
+    }
+
+    setNewExerciseInputs((prev) => ({
+      ...prev,
+      [part]: '',
+    }));
+  };
+
   const handleToggleWorkout = () => {
     onUpdateRecord({
       ...record,
@@ -128,14 +186,47 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
     });
   };
 
+  // Helper functions for tags processing
+  const parseExercises = (val: string): string[] => {
+    if (!val || val.trim() === '') return [];
+    return val.split(',').map((s) => s.trim()).filter(Boolean);
+  };
+
+  const stringifyExercises = (exercises: string[]): string => {
+    return exercises.join(', ');
+  };
+
   const handleAddSuggestion = (bodyPart: string, suggestion: string) => {
     const currentCat = workout.categorized || {};
     const currentVal = currentCat[bodyPart] || '';
-    const newVal = currentVal ? `${currentVal}, ${suggestion}` : suggestion;
+    const exercises = parseExercises(currentVal);
     
+    if (!exercises.includes(suggestion)) {
+      const updated = [...exercises, suggestion];
+      const newCat = {
+        ...currentCat,
+        [bodyPart]: stringifyExercises(updated)
+      };
+      onUpdateRecord({
+        ...record,
+        workout: {
+          ...workout,
+          categorized: newCat,
+          description: buildDescription(newCat, workout.generalNote || '')
+        }
+      });
+    }
+  };
+
+  const handleDeleteTag = (bodyPart: string, indexToDelete: number) => {
+    const currentCat = workout.categorized || {};
+    const currentVal = currentCat[bodyPart] || '';
+    const exercises = parseExercises(currentVal);
+    
+    const updated = exercises.filter((_, idx) => idx !== indexToDelete);
     const newCat = {
       ...currentCat,
-      [bodyPart]: newVal
+      [bodyPart]: stringifyExercises(updated)
     };
     onUpdateRecord({
       ...record,
@@ -145,6 +236,72 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
         description: buildDescription(newCat, workout.generalNote || '')
       }
     });
+  };
+
+  const handlePointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    part: string,
+    index: number,
+    text: string
+  ) => {
+    if (e.button !== 0) return;
+    
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const offsetX = startX - rect.left;
+    const offsetY = startY - rect.top;
+
+    setDragState({
+      part,
+      index,
+      text,
+      startX,
+      startY,
+      currentX: startX,
+      currentY: startY,
+      offsetX,
+      offsetY,
+      tagWidth: rect.width,
+      tagHeight: rect.height,
+    });
+
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragState) return;
+    const currentX = e.clientX;
+    const currentY = e.clientY;
+
+    const trashRect = trashRef.current?.getBoundingClientRect();
+    const isOver = !!(
+      trashRect &&
+      currentX >= trashRect.left &&
+      currentX <= trashRect.right &&
+      currentY >= trashRect.top &&
+      currentY <= trashRect.bottom
+    );
+
+    setIsOverTrash(isOver);
+    setDragState({
+      ...dragState,
+      currentX,
+      currentY,
+    });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>, part: string, index: number) => {
+    if (!dragState) return;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+
+    if (isOverTrash) {
+      handleDeleteTag(part, index);
+    }
+
+    setDragState(null);
+    setIsOverTrash(false);
   };
 
 
@@ -422,19 +579,80 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
                 const suggestions = EXERCISE_SUGGESTIONS[part] || [];
                 
                 return (
-                  <div key={part} className="space-y-2 bg-zinc-950/30 p-3 rounded-2xl border border-zinc-850/30">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-extrabold text-zinc-350">{part}</span>
+                  <div key={part} className="space-y-3 bg-zinc-950/30 p-3.5 rounded-2xl border border-zinc-850/30">
+                    <div className="flex justify-between items-center border-b border-zinc-900 pb-1.5">
+                      <span className="text-xs font-black text-zinc-350">{part}</span>
                     </div>
-                    <input
-                      type="text"
-                      value={currentVal}
-                      onChange={(e) => handleCategorizedChange(part, e.target.value)}
-                      placeholder={`請輸入${part}訓練動作...`}
-                      className="w-full text-xs bg-zinc-950 border border-zinc-850 focus:border-blue-500/50 rounded-xl px-3.5 py-2 text-zinc-200 focus:outline-none transition-all placeholder-zinc-700 font-medium"
-                    />
+
+                    {/* Draggable tags list */}
+                    <div className="flex flex-wrap gap-2 py-1">
+                      {parseExercises(currentVal).map((exercise, idx) => {
+                        const isDraggingThis =
+                          dragState &&
+                          dragState.part === part &&
+                          dragState.index === idx;
+
+                        return (
+                          <div
+                            key={idx}
+                            onPointerDown={(e) => handlePointerDown(e, part, idx, exercise)}
+                            onPointerMove={handlePointerMove}
+                            onPointerUp={(e) => handlePointerUp(e, part, idx)}
+                            className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-semibold select-none cursor-grab active:cursor-grabbing border transition-all ${
+                              isDraggingThis
+                                ? 'opacity-20 border-zinc-800 bg-zinc-900/40 text-zinc-650'
+                                : 'bg-zinc-850 hover:bg-zinc-800 border-zinc-750 text-zinc-200 hover:text-white'
+                            }`}
+                            style={{ touchAction: 'none' }} // Prevents default scrolling on mobile when dragging
+                          >
+                            <GripVertical className="w-3.5 h-3.5 text-zinc-500 shrink-0 pointer-events-none" />
+                            <span>{exercise}</span>
+                            <button
+                              type="button"
+                              onPointerDown={(e) => e.stopPropagation()} // Stop drag from initiating
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteTag(part, idx);
+                              }}
+                              className="w-3.5 h-3.5 rounded-full flex items-center justify-center bg-zinc-800 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 transition-all cursor-pointer"
+                            >
+                              <X className="w-2.5 h-2.5 pointer-events-none" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                      
+                      {parseExercises(currentVal).length === 0 && (
+                        <span className="text-[10px] text-zinc-600 italic py-1">暫無記錄，請點選下方推薦動作或手動輸入</span>
+                      )}
+                    </div>
+
+                    {/* Manual input row */}
+                    <div className="flex gap-2 items-center pt-1">
+                      <input
+                        type="text"
+                        value={newExerciseInputs[part] || ''}
+                        onChange={(e) => handleNewExerciseChange(part, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddNewExercise(part);
+                          }
+                        }}
+                        placeholder={`手動新增${part}動作...`}
+                        className="flex-1 text-[11px] bg-zinc-950 border border-zinc-850 focus:border-blue-500/50 rounded-xl px-3 py-1.5 text-zinc-200 focus:outline-none transition-all placeholder-zinc-750 font-medium"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAddNewExercise(part)}
+                        className="px-3 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 hover:text-blue-300 text-[11px] font-bold transition-all active:scale-95 cursor-pointer"
+                      >
+                        新增
+                      </button>
+                    </div>
+
                     {suggestions.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-1">
+                      <div className="flex flex-wrap gap-1.5 pt-1.5 border-t border-zinc-900/60">
                         {suggestions.map((sug) => (
                           <button
                             key={sug}
@@ -475,6 +693,46 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
           </p>
         </div>
       )}
+
+      {/* 3. Floating Drag Tag Overlay */}
+      {dragState && (
+        <div
+          className="fixed pointer-events-none bg-zinc-800/90 text-zinc-150 px-3 py-1.5 rounded-full text-xs font-semibold border border-zinc-700/80 shadow-2xl flex items-center space-x-1.5 z-[100] select-none backdrop-blur-sm opacity-90 transition-all duration-75 animate-scaleUp"
+          style={{
+            left: `${dragState.currentX - dragState.offsetX}px`,
+            top: `${dragState.currentY - dragState.offsetY}px`,
+            width: `${dragState.tagWidth}px`,
+            height: `${dragState.tagHeight}px`,
+          }}
+        >
+          <GripVertical className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+          <span className="truncate">{dragState.text}</span>
+          <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center bg-zinc-700 text-zinc-450">
+            <X className="w-2.5 h-2.5" />
+          </div>
+        </div>
+      )}
+
+      {/* 4. Floating Trash Zone */}
+      <div
+        ref={trashRef}
+        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center justify-center px-8 py-3.5 border-2 rounded-3xl backdrop-blur-md transition-all duration-300 pointer-events-none shadow-2xl ${
+          dragState
+            ? 'translate-y-0 opacity-100'
+            : 'translate-y-16 opacity-0 pointer-events-none'
+        } ${
+          isOverTrash
+            ? 'bg-rose-950/90 border-rose-500 text-rose-300 scale-105 shadow-[0_0_20px_rgba(239,68,68,0.25)] animate-pulse'
+            : 'bg-zinc-950/80 border-zinc-800 text-zinc-400'
+        }`}
+      >
+        <div className="flex items-center space-x-2">
+          <Trash2 className={`w-5 h-5 transition-transform ${isOverTrash ? 'scale-110 text-rose-400' : 'text-zinc-400'}`} />
+          <span className="text-xs font-bold tracking-wide">
+            {isOverTrash ? '放開即可刪除訓練動作' : '拖曳至此處刪除項目'}
+          </span>
+        </div>
+      </div>
     </div>
   );
 };
