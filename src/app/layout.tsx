@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Gym Tracker | 健身房極簡一鍵打卡與訓練紀錄",
-  description: "專為私教/自助健身房設計的極簡訓練日誌與倒數計時工具，支持一鍵打卡與 Google 試算表雲端同步。",
+  title: "Fitness & Diet Hub | 健身與飲食日誌",
+  description: "專為極簡生活設計的健身與飲食管理工具。支援個室 Gym 倒數計時、飲食熱量缺口計算與視覺化統計日誌。",
 };
 
 export const viewport: Viewport = {
